@@ -1,0 +1,64 @@
+Q1:	uintptr_t, because this is a virtual address
+
+
+Q2:	We begin with 	UPAGES, KSTACKTOP - KSTKSIZE, KERNBASE
+			0xef000000, 0xf0000000 - 0x00008000, 0xf0000000
+
+	Entry	Base VA		Logical ptr to:
+	1023	0xffc00000	Page table for top 4MB phys mem
+	1022	0xff800000	Page table for next 4MB phys mem
+	960	0xf0000000	Page table for btm 4MB phys mem
+	959	0xefff8000	Kernel stack for cpu0
+	956	0xef000000	User pages
+	..
+	2	0x00800000	No mappings yet
+	1	0x00400000	User space
+	0	0x00000000
+
+
+Q3:	Kernel/user environments are in the same address space. This space
+	is split into 3 sections. The section containing kernel memory is 
+	between [ULIM, 4GB). In this section, the user has no R/W perms, only
+	the kernel can do so. This is due to the permission bits set.
+
+	x86 has 4 protection levels which protects the kernel memory. They
+	are labeled 0 to 3 (known as rings). Ring 0 is kernel mode, while 
+	Ring 3 is user mode. There is a check for current_ring_level <= 
+	descriptor_pl which allows the kernel to deny systems for some ring
+	levels. On processors with hardware virtualization extensions, such
+	as Intel VT-x, there exists Ring -1 for the hypervisor. 
+
+
+Q4:	The maximum physical memory this OS can support is 256M, since 
+	KERNBASE=0xf000000 and we have 256M between KERNBASE and 2^32. (due
+	to the fact that we want all linear addrs to map to phys addrs)
+
+
+Q5:	2^32 / 2^12 = 2^20 pages, and each page requires a page table entry
+	(PTE). Each PTE is 4 bytes, so we need 2^22 bytes so far. Keeping
+	tracking of all these PTEs requires 2^22/2^12 = 2^10 page table pages
+	(PTPs). Each PTP requires a page directory entry (PDE) which is 4 
+	bytes and a page table. Hence we have 1 page table + 2^10 pages. This
+	yields 2^10 * 2^12 + 2^12 = 2^22 ~ 4MB.
+
+Q6:	We transition to running at an instruction above KERNBASE before 
+	running C code. This occurs at the jmp $eax instruction after the
+	kernel loads the address label "relocate" into eax.
+
+	It is possible to continue executing at a low address between enabling
+	paging and executing above KERNBASE: when we flip the %cr0 bit, it 
+	enables virtual memory hardware. Instructions are interpreted as 
+	virtual addresses (which we have mapped to physical addresses) in the
+	first page table in the bootloader. (0x0 is also a virtual address)
+
+	This transition is necessary in order to hide kernel code from the user,
+	and is how we have the address space defined.
+
+
+Challenge:
+
+The challenge exercise implemented was that of a set of extensions for the JOS
+kernel monitor. There are 3 new commands: showmappings, setperms, dump. They show
+virtual to physical mappings (along with permission flags), set permission flags
+and dump contents of a memory region (in hex and in ASCII) respectively. The changes
+can be seen in kern/monitor.c and kern/monitor.h.

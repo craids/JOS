@@ -1,0 +1,30 @@
+# Lab 6 - Rayden Y Chia
+
+Q1: The TX function returns -1 if the TX ring is full. In my opinion it is better for caller to decide what to do in the event that no packets could be transmitted. Implementing a strategy in the driver code would force callers into using that specific strategy, resulting in a less composable and extensible design. For example, net/output.c loops forever, waiting for new transmission requests. If the sys_e1000_transmit syscall returns -E_E1000_TXBUF_FULL (-1), the packet is dropped. The syscall will then attempt to transmit the packet 20 times before giving up. After each attempt, the syscall will yield the CPU so the system is not blocked. It should not be a huge problem to drop a packet after 20 tries since upper network layers should be able to handle such cases.
+
+Q2: I enabled the Receiver Timer Interrupt (RTI) to prevent cycling the CPU and waiting for the next packet to reach the E1000 controller. The RTI gets triggered every time a new packet arrives. If the RX ring is empty, the e1000_receive syscall returns -E_E1000_RXBUF_EMPTY which causes sys_e1000_transmit to indicate in its env structure that it is waiting on a packet (env_e1000_waiting_rx=true) and to yield the CPU. When the RTI happens, the handler looks for an environment waiting on a packet, sets it to runnable and exits. sys_e1000_transmit is called in a while loop because after it is marked runnable it returns with -E_E1000_RXBUF_EMPTY and the while loop forces another call to sys_e1000_transmit. This time however, the call will succeed because we know there's a packet waiting.
+
+Q3: It has a sliding banner that says "Cheesy web page!"
+
+Q4: 2 weeks, average of about 1-3 hours a day during weekdays.
+
+Challenge:
+
+I implemented dynamic MAC, read from the EEPROM as specified in sections 5.3.1, 5.6, and 13.4.4. The EEPROM read register needs to be zeroed in between reads to flush the read data. 
+
+I modified the following files:
+-GNUmakefile (specify MACADDR to emulated driver)
+-inc/{lib,syscall}.h - syscall declarations for getting MAC address
+-kern/e1000.c - call read_mac_from_eeprom at initialization
+-kern/syscall.c - sys_e1000_get_mac syscall to get MAC address
+-lib/syscall.c - userland syscall
+-net/lwip/jos/jif/jif.c - replace hardcoded address with MAC address from syscall
+
+To verify that it works, run `make MACADDR=AA:BB:CC:DD:EE:FF qemu-nox` with `MACADDR` set to any desired value. You will see output similar to the following:
+..
+init: starting sh
+ns: aa:bb:cc:dd:ee:ff bound to static IP 10.0.2.15
+NS: TCP/IP initialized
+..
+
+This does not work with `make grade` since the MAC is hardcoded. However with `make run-http` one can check the ARP mappings are valid (so that visiting http://127.0.0.1:{port}/index.html works). 
